@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Conda environment (exclude everything except activation scripts)
+.exercisetracker/*
+!.exercisetracker/etc/
+!.exercisetracker/etc/conda/
+!.exercisetracker/etc/conda/activate.d/
+!.exercisetracker/etc/conda/deactivate.d/
+!.exercisetracker/etc/conda/activate.d/*
+!.exercisetracker/etc/conda/deactivate.d/*
+
+# Scripts directory (keep activation scripts in git)
+!scripts/
+!scripts/*.sh
+!scripts/*.bat
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Data
+data/raw/
+data/processed/
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Models and caches
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
