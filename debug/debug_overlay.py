@@ -106,8 +106,19 @@ def main() -> None:
     registry = ExerciseRegistry()
     exercise = registry.load_exercise(args.exercise, data_root=args.data_root)
 
-    # Process video to get keypoints/embeddings/timestamps
-    vp = VideoProcessor(embedder=exercise.embedder)
+    # Use same use_3d setting as exercise was trained with
+    use_3d = exercise.config.use_3d
+    from exercise_tracker.pose_extraction import MediaPipeExtractor
+    from exercise_tracker.pose_processing import PoseNormalizer
+    
+    # Create extractor and normalizer with same use_3d setting
+    pose_extractor = MediaPipeExtractor(use_3d=use_3d)
+    normalizer = PoseNormalizer(use_3d=use_3d)
+    vp = VideoProcessor(
+        pose_extractor=pose_extractor,
+        normalizer=normalizer,
+        embedder=exercise.embedder
+    )
     video_data = vp.process_video(str(video_path), cache_dir=str(exercise.exercise_dir), force_reprocess=True)
 
     embeddings = video_data["embeddings"]

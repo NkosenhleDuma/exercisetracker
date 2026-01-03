@@ -106,6 +106,20 @@ class Exercise:
         # Load embedder if available
         if self.get_embedder_path().exists():
             self.embedder = PoseEmbedder.load(str(self.get_embedder_path()))
+            
+            # Validate embedder dimension matches config use_3d setting
+            if self.embedder and self.embedder.is_fitted:
+                expected_dim = 99 if self.config.use_3d else 66  # 33 keypoints * 3 or * 2
+                actual_dim = self.embedder.pca.n_features_in_
+                if actual_dim != expected_dim:
+                    import warnings
+                    warnings.warn(
+                        f"Dimension mismatch detected: Embedder was trained with {actual_dim} features "
+                        f"({'3D' if actual_dim == 99 else '2D'} data), but config has use_3d={self.config.use_3d} "
+                        f"(expects {expected_dim} features). "
+                        f"This may cause errors during processing. Consider re-ingesting and re-training with "
+                        f"use_3d={'True' if actual_dim == 99 else 'False'} to match the embedder."
+                    )
 
         # Load phase model if available
         if self.get_phase_model_path().exists():

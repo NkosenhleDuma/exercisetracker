@@ -20,6 +20,7 @@ class ExerciseConfig:
         num_phase_bins: int = 100,
         embed_dim: int = 32,
         phase_window_size: int = 10,
+        use_3d: bool = False,
         **kwargs,
     ):
         """
@@ -36,6 +37,7 @@ class ExerciseConfig:
             num_phase_bins: Number of phase bins for manifold
             embed_dim: Embedding dimension
             phase_window_size: Number of embeddings in sliding window for phase prediction
+            use_3d: If True, use 3D pose coordinates (x, y, z); if False, use 2D (x, y)
             **kwargs: Additional custom parameters
         """
         self.name = name
@@ -48,6 +50,7 @@ class ExerciseConfig:
         self.num_phase_bins = num_phase_bins
         self.embed_dim = embed_dim
         self.phase_window_size = phase_window_size
+        self.use_3d = use_3d
         self.custom_params = kwargs
 
     def to_dict(self) -> Dict[str, Any]:
@@ -63,6 +66,7 @@ class ExerciseConfig:
             "num_phase_bins": self.num_phase_bins,
             "embed_dim": self.embed_dim,
             "phase_window_size": self.phase_window_size,
+            "use_3d": self.use_3d,
             **self.custom_params,
         }
 

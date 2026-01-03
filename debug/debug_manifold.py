@@ -19,6 +19,8 @@ logging.basicConfig(
 
 from exercise_tracker.exercise_framework import ExerciseRegistry, ExerciseConfig
 from exercise_tracker.data import VideoProcessor
+from exercise_tracker.pose_extraction import MediaPipeExtractor
+from exercise_tracker.pose_processing import PoseNormalizer
 from exercise_tracker.phase_estimation import PhaseTracker
 
 
@@ -91,13 +93,24 @@ def main():
     print(f"Processing video: {args.video}")
     print(f"Output directory: {output_dir}")
 
+    # Use same use_3d setting as exercise was trained with
+    use_3d = exercise.config.use_3d
+    print(f"Using 3D coordinates: {use_3d}")
+
     # Process video
     import time
     print("\n=== Timing Debug Information ===")
     print("Note: Current processing is BATCH mode (entire video first).")
     print("For real-time streaming, frame-by-frame processing would be needed.\n")
     
-    video_processor = VideoProcessor(embedder=exercise.embedder)
+    # Create extractor and normalizer with same use_3d setting
+    pose_extractor = MediaPipeExtractor(use_3d=use_3d)
+    normalizer = PoseNormalizer(use_3d=use_3d)
+    video_processor = VideoProcessor(
+        pose_extractor=pose_extractor,
+        normalizer=normalizer,
+        embedder=exercise.embedder
+    )
     cache_dir = str(exercise.exercise_dir)
     
     video_start = time.perf_counter()
@@ -244,7 +257,7 @@ def main():
 
     plt.tight_layout()
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    plot_path = output_dir / f"manifold_debug_{video_name}_{timestamp}.png"
+    plot_path = output_dir / f"debug_manifold_phase_progression_{video_name}_{timestamp}.png"
     plt.savefig(plot_path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved manifold debug plot to: {plot_path}")
@@ -294,7 +307,7 @@ def main():
         ax.set_yscale("log")
 
     plt.tight_layout()
-    plot_path2 = output_dir / f"manifold_phase_deviation_{video_name}_{timestamp}.png"
+    plot_path2 = output_dir / f"debug_manifold_phase_deviation_{video_name}_{timestamp}.png"
     plt.savefig(plot_path2, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved phase-deviation plot to: {plot_path2}")

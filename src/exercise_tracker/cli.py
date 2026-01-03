@@ -33,6 +33,7 @@ class ExerciseTrackerCLI:
         auto_rep: bool = False,
         number_of_reps: Optional[int] = None,
         augment_flip: bool = True,
+        use_3d: bool = False,
     ):
         """
         Process reference videos and build manifolds.
@@ -45,13 +46,19 @@ class ExerciseTrackerCLI:
             auto_rep: If True, automatically detect reps (default: False, treats each video as one rep)
             number_of_reps: If specified, divide each video into this many equal segments
             augment_flip: If True, augment data with horizontally flipped poses (default: True)
+            use_3d: If True, use 3D pose coordinates (x, y, z); if False, use 2D (x, y) (default: False)
         """
         # Get or create exercise
         ex = self.registry.get(exercise)
         if ex is None:
-            config = ExerciseConfig(name=exercise)
+            config = ExerciseConfig(name=exercise, use_3d=use_3d)
             ex = Exercise(config, data_root=self.data_root)
             self.registry.register(ex)
+        else:
+            # Update use_3d if provided
+            if use_3d != ex.config.use_3d:
+                ex.config.use_3d = use_3d
+                print(f"Updated use_3d setting to {use_3d} for exercise '{exercise}'")
 
         # Get video paths
         if video_paths is None:
@@ -102,6 +109,7 @@ class ExerciseTrackerCLI:
         video_paths: Optional[List[str]] = None,
         debug: bool = False,
         augment_flip: bool = True,
+        use_3d: bool = False,
     ):
         """
         Train phase estimation model.
@@ -111,7 +119,22 @@ class ExerciseTrackerCLI:
             video_paths: Optional list of video paths (uses reference videos if None)
             debug: If True, generate similarity_to_start plots for debugging
             augment_flip: If True, augment data with horizontally flipped poses (default: True)
+            use_3d: If True, use 3D pose coordinates (x, y, z); if False, use 2D (x, y) (default: False)
+                   Note: Must match the use_3d setting used during ingestion
         """
+        # Load exercise and check use_3d consistency
+        ex = self.registry.get(exercise)
+        if ex is None:
+            try:
+                ex = self.registry.load_exercise(exercise, data_root=self.data_root)
+            except Exception as e:
+                print(f"Error loading exercise: {e}")
+                return
+        
+        # Warn if use_3d doesn't match config
+        if use_3d != ex.config.use_3d:
+            print(f"Warning: use_3d={use_3d} doesn't match exercise config (use_3d={ex.config.use_3d})")
+            print(f"Using exercise config setting: use_3d={ex.config.use_3d}")
         # Load exercise
         ex = self.registry.get(exercise)
         if ex is None:

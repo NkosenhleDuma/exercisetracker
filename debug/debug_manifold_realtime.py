@@ -97,10 +97,12 @@ def main():
 
     # Initialize real-time processor
     window_size = exercise.config.phase_window_size
+    use_3d = exercise.config.use_3d
     print(f"\nUsing window size: {window_size}")
+    print(f"Using 3D coordinates: {use_3d}")
     
-    pose_extractor = MediaPipeExtractor()
-    normalizer = PoseNormalizer()
+    pose_extractor = MediaPipeExtractor(use_3d=use_3d)
+    normalizer = PoseNormalizer(use_3d=use_3d)
     
     realtime_processor = RealtimeVideoProcessor(
         pose_extractor=pose_extractor,
@@ -311,7 +313,7 @@ def main():
 
     plt.tight_layout()
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    plot_path = output_dir / f"manifold_realtime_{video_name}_{timestamp}.png"
+    plot_path = output_dir / f"realtime_manifold_phase_progression_{video_name}_{timestamp}.png"
     plt.savefig(plot_path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved real-time manifold debug plot to: {plot_path}")
@@ -360,7 +362,7 @@ def main():
         ax.set_yscale("log")
 
     plt.tight_layout()
-    plot_path2 = output_dir / f"manifold_realtime_phase_deviation_{video_name}_{timestamp}.png"
+    plot_path2 = output_dir / f"realtime_manifold_phase_deviation_{video_name}_{timestamp}.png"
     plt.savefig(plot_path2, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved real-time phase-deviation plot to: {plot_path2}")

@@ -65,6 +65,18 @@ class PoseEmbedder:
         
         # Reshape to 2D for PCA
         pose_2d = pose_vector.reshape(1, -1)
+        
+        # Validate input dimension matches PCA model
+        expected_features = self.pca.n_features_in_
+        actual_features = pose_2d.shape[1]
+        if actual_features != expected_features:
+            raise ValueError(
+                f"Input dimension mismatch: PCA model expects {expected_features} features "
+                f"(trained on {'3D' if expected_features == 99 else '2D'} data), "
+                f"but got {actual_features} features ({'3D' if actual_features == 99 else '2D'} data). "
+                f"Make sure to use the same use_3d setting during ingestion/training and analysis."
+            )
+        
         embedding = self.pca.transform(pose_2d)
 
         elapsed = time.perf_counter() - start_time

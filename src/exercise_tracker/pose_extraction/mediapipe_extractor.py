@@ -9,7 +9,7 @@ from .base_extractor import BasePoseExtractor
 
 
 class MediaPipeExtractor(BasePoseExtractor):
-    """MediaPipe-based pose extractor for 2D keypoint extraction."""
+    """MediaPipe-based pose extractor for 2D/3D keypoint extraction."""
 
     # MediaPipe Pose landmark indices
     KEYPOINT_NAMES = [
@@ -48,16 +48,24 @@ class MediaPipeExtractor(BasePoseExtractor):
         "right_foot_index",
     ]
 
-    def __init__(self, model_complexity: int = 1, min_detection_confidence: float = 0.5):
+    def __init__(
+        self, 
+        model_complexity: int = 1, 
+        min_detection_confidence: float = 0.5,
+        use_3d: bool = False
+    ):
         """
         Initialize MediaPipe pose extractor.
 
         Args:
             model_complexity: MediaPipe model complexity (0, 1, or 2)
             min_detection_confidence: Minimum confidence for pose detection
+            use_3d: If True, extract 3D coordinates (x, y, z, visibility);
+                   if False, extract 2D (x, y, visibility)
         """
         self.model_complexity = model_complexity
         self.min_detection_confidence = min_detection_confidence
+        self.use_3d = use_3d
 
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
@@ -74,8 +82,11 @@ class MediaPipeExtractor(BasePoseExtractor):
             frame: Input frame as numpy array (H, W, 3) in BGR format
 
         Returns:
-            Pose keypoints as numpy array of shape (num_keypoints, 3) where
-            each row is [x, y, confidence], or None if no pose detected
+            If use_3d=False: Pose keypoints as numpy array of shape (num_keypoints, 3)
+                where each row is [x, y, visibility]
+            If use_3d=True: Pose keypoints as numpy array of shape (num_keypoints, 4)
+                where each row is [x, y, z, visibility]
+            Returns None if no pose detected
         """
         # Convert BGR to RGB
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -89,10 +100,17 @@ class MediaPipeExtractor(BasePoseExtractor):
 
         # Extract keypoints
         landmarks = results.pose_landmarks.landmark
-        keypoints = np.zeros((len(landmarks), 3))
-
-        for i, landmark in enumerate(landmarks):
-            keypoints[i] = [landmark.x, landmark.y, landmark.visibility]
+        
+        if self.use_3d:
+            # 3D mode: [x, y, z, visibility]
+            keypoints = np.zeros((len(landmarks), 4))
+            for i, landmark in enumerate(landmarks):
+                keypoints[i] = [landmark.x, landmark.y, landmark.z, landmark.visibility]
+        else:
+            # 2D mode: [x, y, visibility] (backward compatible)
+            keypoints = np.zeros((len(landmarks), 3))
+            for i, landmark in enumerate(landmarks):
+                keypoints[i] = [landmark.x, landmark.y, landmark.visibility]
 
         return keypoints
 

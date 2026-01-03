@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 
 from .data import VideoProcessor, DataManager
+from .pose_extraction import MediaPipeExtractor
 from .pose_processing import PoseNormalizer, PoseEmbedder
 from .pose_processing.pose_utils import flip_keypoints_horizontally
 from .reference_learning import TrajectoryBuilder, ManifoldBuilder
@@ -49,7 +50,14 @@ class ExercisePipeline:
         Returns:
             Dictionary with ingestion results
         """
-        video_processor = VideoProcessor()
+        # Create extractor and normalizer with use_3d from config
+        use_3d = self.exercise.config.use_3d
+        pose_extractor = MediaPipeExtractor(use_3d=use_3d)
+        normalizer = PoseNormalizer(use_3d=use_3d)
+        video_processor = VideoProcessor(
+            pose_extractor=pose_extractor,
+            normalizer=normalizer
+        )
         trajectory_builder = TrajectoryBuilder(
             num_phase_points=self.exercise.config.num_phase_bins
         )
@@ -104,13 +112,13 @@ class ExercisePipeline:
                         for kp in video_data["keypoints"]
                     ]
                     
-                    # Normalize flipped keypoints
-                    normalizer = PoseNormalizer()
-                    flipped_normalized = normalizer.normalize_sequence(flipped_keypoints)
+                    # Normalize flipped keypoints (use same use_3d setting)
+                    flip_normalizer = PoseNormalizer(use_3d=self.exercise.config.use_3d)
+                    flipped_normalized = flip_normalizer.normalize_sequence(flipped_keypoints)
                     
                     # Get pose vectors from flipped normalized keypoints
                     flipped_pose_vectors = [
-                        normalizer.get_pose_vector(kp) for kp in flipped_normalized
+                        flip_normalizer.get_pose_vector(kp) for kp in flipped_normalized
                     ]
                     
                     # Embed flipped poses
@@ -256,6 +264,15 @@ class ExercisePipeline:
                 self.exercise.config.name
             )
 
+        # Create video processor with use_3d from config
+        use_3d = self.exercise.config.use_3d
+        pose_extractor = MediaPipeExtractor(use_3d=use_3d)
+        normalizer = PoseNormalizer(use_3d=use_3d)
+        video_processor = VideoProcessor(
+            pose_extractor=pose_extractor,
+            normalizer=normalizer
+        )
+
         # Setup debug directory if needed
         debug_dir = None
         if debug:
@@ -293,13 +310,13 @@ class ExercisePipeline:
                         for kp in video_data["keypoints"]
                     ]
                     
-                    # Normalize flipped keypoints
-                    normalizer = PoseNormalizer()
-                    flipped_normalized = normalizer.normalize_sequence(flipped_keypoints)
+                    # Normalize flipped keypoints (use same use_3d setting)
+                    flip_normalizer = PoseNormalizer(use_3d=self.exercise.config.use_3d)
+                    flipped_normalized = flip_normalizer.normalize_sequence(flipped_keypoints)
                     
                     # Get pose vectors from flipped normalized keypoints
                     flipped_pose_vectors = [
-                        normalizer.get_pose_vector(kp) for kp in flipped_normalized
+                        flip_normalizer.get_pose_vector(kp) for kp in flipped_normalized
                     ]
                     
                     # Embed flipped poses
@@ -456,8 +473,15 @@ class ExercisePipeline:
         if self.exercise.phase_model is None or not self.exercise.phase_model.is_fitted:
             raise ValueError("Phase model must be trained before analysis")
 
-        # Process video
-        video_processor = VideoProcessor(embedder=self.exercise.embedder)
+        # Process video (use same use_3d setting as training)
+        use_3d = self.exercise.config.use_3d
+        pose_extractor = MediaPipeExtractor(use_3d=use_3d)
+        normalizer = PoseNormalizer(use_3d=use_3d)
+        video_processor = VideoProcessor(
+            pose_extractor=pose_extractor,
+            normalizer=normalizer,
+            embedder=self.exercise.embedder
+        )
         cache_dir = str(self.exercise.exercise_dir)
         video_data = video_processor.process_video(
             video_path, cache_dir=cache_dir, force_reprocess=force_reprocess
