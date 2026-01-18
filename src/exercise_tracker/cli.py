@@ -34,6 +34,10 @@ class ExerciseTrackerCLI:
         number_of_reps: Optional[int] = None,
         augment_flip: bool = True,
         use_3d: bool = False,
+        phase_model_type: Optional[str] = None,
+        phase_window_duration: Optional[float] = None,
+        smoothing_mode: Optional[str] = None,
+        smoothing_duration: Optional[float] = None,
     ):
         """
         Process reference videos and build manifolds.
@@ -47,18 +51,73 @@ class ExerciseTrackerCLI:
             number_of_reps: If specified, divide each video into this many equal segments
             augment_flip: If True, augment data with horizontally flipped poses (default: True)
             use_3d: If True, use 3D pose coordinates (x, y, z); if False, use 2D (x, y) (default: False)
+            phase_model_type: Phase model type - 'frame_based' or 'time_based' (default: 'frame_based')
+            phase_window_duration: Window duration in seconds for time-based model (default: 0.5)
+            smoothing_mode: Smoothing mode - 'frames' or 'time' (default: 'frames')
+            smoothing_duration: Smoothing duration in seconds for time-based smoothing (default: 0.3)
         """
         # Get or create exercise
         ex = self.registry.get(exercise)
         if ex is None:
-            config = ExerciseConfig(name=exercise, use_3d=use_3d)
+            # Create config with provided parameters
+            config_kwargs = {"name": exercise, "use_3d": use_3d}
+            
+            # Set phase model type and related parameters
+            if phase_model_type is not None:
+                config_kwargs["phase_model_type"] = phase_model_type
+                if phase_model_type == "time_based":
+                    config_kwargs["phase_window_mode"] = "time"
+                    if phase_window_duration is not None:
+                        config_kwargs["phase_window_duration"] = phase_window_duration
+                    else:
+                        config_kwargs["phase_window_duration"] = 0.5  # Default
+                else:
+                    config_kwargs["phase_window_mode"] = "frames"
+            
+            # Set smoothing mode
+            if smoothing_mode is not None:
+                config_kwargs["smoothing_mode"] = smoothing_mode
+                if smoothing_mode == "time" and smoothing_duration is not None:
+                    config_kwargs["smoothing_duration"] = smoothing_duration
+                elif smoothing_mode == "time" and smoothing_duration is None:
+                    config_kwargs["smoothing_duration"] = 0.3  # Default
+            
+            config = ExerciseConfig(**config_kwargs)
             ex = Exercise(config, data_root=self.data_root)
             self.registry.register(ex)
         else:
-            # Update use_3d if provided
+            # Update config if provided
+            updated = False
             if use_3d != ex.config.use_3d:
                 ex.config.use_3d = use_3d
+                updated = True
                 print(f"Updated use_3d setting to {use_3d} for exercise '{exercise}'")
+            
+            if phase_model_type is not None and phase_model_type != ex.config.phase_model_type:
+                ex.config.phase_model_type = phase_model_type
+                if phase_model_type == "time_based":
+                    ex.config.phase_window_mode = "time"
+                    if phase_window_duration is not None:
+                        ex.config.phase_window_duration = phase_window_duration
+                    elif ex.config.phase_window_duration is None:
+                        ex.config.phase_window_duration = 0.5  # Default
+                else:
+                    ex.config.phase_window_mode = "frames"
+                updated = True
+                print(f"Updated phase_model_type to {phase_model_type} for exercise '{exercise}'")
+            
+            if smoothing_mode is not None and smoothing_mode != ex.config.smoothing_mode:
+                ex.config.smoothing_mode = smoothing_mode
+                if smoothing_mode == "time":
+                    if smoothing_duration is not None:
+                        ex.config.smoothing_duration = smoothing_duration
+                    elif ex.config.smoothing_duration is None:
+                        ex.config.smoothing_duration = 0.3  # Default
+                updated = True
+                print(f"Updated smoothing_mode to {smoothing_mode} for exercise '{exercise}'")
+            
+            if updated:
+                ex.save()
 
         # Get video paths
         if video_paths is None:
@@ -82,6 +141,10 @@ class ExerciseTrackerCLI:
             return
 
         print(f"Ingesting {len(video_paths)} reference videos for exercise '{exercise}'...")
+        if ex.config.phase_model_type:
+            print(f"  Phase model type: {ex.config.phase_model_type}")
+            if ex.config.phase_window_mode == "time":
+                print(f"  Window duration: {ex.config.phase_window_duration} seconds")
 
         # Run ingestion pipeline
         pipeline = ExercisePipeline(ex)
@@ -110,6 +173,10 @@ class ExerciseTrackerCLI:
         debug: bool = False,
         augment_flip: bool = True,
         use_3d: bool = False,
+        phase_model_type: Optional[str] = None,
+        phase_window_duration: Optional[float] = None,
+        smoothing_mode: Optional[str] = None,
+        smoothing_duration: Optional[float] = None,
     ):
         """
         Train phase estimation model.
@@ -121,6 +188,10 @@ class ExerciseTrackerCLI:
             augment_flip: If True, augment data with horizontally flipped poses (default: True)
             use_3d: If True, use 3D pose coordinates (x, y, z); if False, use 2D (x, y) (default: False)
                    Note: Must match the use_3d setting used during ingestion
+            phase_model_type: Phase model type - 'frame_based' or 'time_based' (overrides config if provided)
+            phase_window_duration: Window duration in seconds for time-based model (default: 0.5)
+            smoothing_mode: Smoothing mode - 'frames' or 'time' (overrides config if provided)
+            smoothing_duration: Smoothing duration in seconds for time-based smoothing (default: 0.3)
         """
         # Load exercise and check use_3d consistency
         ex = self.registry.get(exercise)
@@ -131,20 +202,45 @@ class ExerciseTrackerCLI:
                 print(f"Error loading exercise: {e}")
                 return
         
+        # Update config if phase model parameters provided
+        updated = False
+        if phase_model_type is not None and phase_model_type != ex.config.phase_model_type:
+            ex.config.phase_model_type = phase_model_type
+            if phase_model_type == "time_based":
+                ex.config.phase_window_mode = "time"
+                if phase_window_duration is not None:
+                    ex.config.phase_window_duration = phase_window_duration
+                elif ex.config.phase_window_duration is None:
+                    ex.config.phase_window_duration = 0.5  # Default
+            else:
+                ex.config.phase_window_mode = "frames"
+            updated = True
+            print(f"Updated phase_model_type to {phase_model_type} for training")
+        
+        if smoothing_mode is not None and smoothing_mode != ex.config.smoothing_mode:
+            ex.config.smoothing_mode = smoothing_mode
+            if smoothing_mode == "time":
+                if smoothing_duration is not None:
+                    ex.config.smoothing_duration = smoothing_duration
+                elif ex.config.smoothing_duration is None:
+                    ex.config.smoothing_duration = 0.3  # Default
+            updated = True
+            print(f"Updated smoothing_mode to {smoothing_mode} for training")
+        
+        if updated:
+            ex.save()
+        
         # Warn if use_3d doesn't match config
         if use_3d != ex.config.use_3d:
             print(f"Warning: use_3d={use_3d} doesn't match exercise config (use_3d={ex.config.use_3d})")
             print(f"Using exercise config setting: use_3d={ex.config.use_3d}")
-        # Load exercise
-        ex = self.registry.get(exercise)
-        if ex is None:
-            try:
-                ex = self.registry.load_exercise(exercise, data_root=self.data_root)
-            except Exception as e:
-                print(f"Error loading exercise: {e}")
-                return
 
         print(f"Training phase model for exercise '{exercise}'...")
+        print(f"  Model type: {ex.config.phase_model_type}")
+        if ex.config.phase_window_mode == "time":
+            print(f"  Window duration: {ex.config.phase_window_duration} seconds")
+        else:
+            print(f"  Window size: {ex.config.phase_window_size} frames")
 
         # Run training pipeline
         pipeline = ExercisePipeline(ex)

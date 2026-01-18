@@ -67,6 +67,7 @@ data/processed/
 *.pt
 *.pth
 .cache/
+checkpoints
 
 # OS
 .DS_Store

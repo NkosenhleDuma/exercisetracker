@@ -108,6 +108,29 @@ def main() -> None:
 
     # Use same use_3d setting as exercise was trained with
     use_3d = exercise.config.use_3d
+    
+    # Check if time-based model
+    is_time_based = (
+        exercise.config.phase_model_type == "time_based" or 
+        exercise.config.phase_window_mode == "time" or
+        hasattr(exercise.phase_model, 'window_duration')
+    )
+    if is_time_based:
+        model_backend = "PyTorch Lightning (LSTM)"
+        print(f"Using time-based model (window duration: {exercise.config.phase_window_duration}s)")
+        print(f"Model backend: {model_backend}")
+    else:
+        # Check if MLP (PyTorch) or RandomForest (sklearn)
+        if hasattr(exercise.phase_model, 'model_type'):
+            if exercise.phase_model.model_type == "mlp":
+                model_backend = "PyTorch (MLP)"
+            else:
+                model_backend = "sklearn (RandomForest)"
+        else:
+            model_backend = "Unknown"
+        print(f"Using frame-based model (window size: {exercise.config.phase_window_size} frames)")
+        print(f"Model backend: {model_backend}")
+    
     from exercise_tracker.pose_extraction import MediaPipeExtractor
     from exercise_tracker.pose_processing import PoseNormalizer
     
@@ -135,8 +158,11 @@ def main() -> None:
             "  python -m exercise_tracker.cli train --exercise {exercise}"
         )
 
-    # Phase estimation
-    phases = exercise.phase_model.predict_phases(embeddings)
+    # Phase estimation (pass timestamps for time-based models)
+    if is_time_based:
+        phases = exercise.phase_model.predict_phases(embeddings, timestamps=timestamps)
+    else:
+        phases = exercise.phase_model.predict_phases(embeddings)
     unwrapped = exercise.phase_tracker.track_phase(phases, timestamps, smooth=True, unwrap=True)
 
     # Rep counting + validation

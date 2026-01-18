@@ -96,6 +96,28 @@ def main():
     # Use same use_3d setting as exercise was trained with
     use_3d = exercise.config.use_3d
     print(f"Using 3D coordinates: {use_3d}")
+    
+    # Check if time-based model
+    is_time_based = (
+        exercise.config.phase_model_type == "time_based" or 
+        exercise.config.phase_window_mode == "time" or
+        hasattr(exercise.phase_model, 'window_duration')
+    )
+    if is_time_based:
+        model_backend = "PyTorch Lightning (LSTM)"
+        print(f"Using time-based model (window duration: {exercise.config.phase_window_duration}s)")
+        print(f"Model backend: {model_backend}")
+    else:
+        # Check if MLP (PyTorch) or RandomForest (sklearn)
+        if hasattr(exercise.phase_model, 'model_type'):
+            if exercise.phase_model.model_type == "mlp":
+                model_backend = "PyTorch (MLP)"
+            else:
+                model_backend = "sklearn (RandomForest)"
+        else:
+            model_backend = "Unknown"
+        print(f"Using frame-based model (window size: {exercise.config.phase_window_size} frames)")
+        print(f"Model backend: {model_backend}")
 
     # Process video
     import time
@@ -142,9 +164,12 @@ def main():
         timestamps = timestamps[: args.max_frames]
         num_frames = len(embeddings)  # Update num_frames if limited
 
-    # Estimate phases
+    # Estimate phases (pass timestamps for time-based models)
     phase_start = time.perf_counter()
-    phases = exercise.phase_model.predict_phases(embeddings, log_timing=True)
+    if is_time_based:
+        phases = exercise.phase_model.predict_phases(embeddings, timestamps=timestamps, log_timing=True)
+    else:
+        phases = exercise.phase_model.predict_phases(embeddings, log_timing=True)
     phase_time = time.perf_counter() - phase_start
     print(f"Phase prediction: {phase_time*1000:.1f} ms total")
 

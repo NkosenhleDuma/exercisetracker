@@ -7,7 +7,7 @@ from .exercise_config import ExerciseConfig
 from ..data import DataManager
 from ..pose_processing import PoseEmbedder
 from ..reference_learning import ManifoldBuilder, TrajectoryBuilder
-from ..phase_estimation import PhaseModel, PhaseTracker
+from ..phase_estimation import PhaseModel, PhaseTracker, FrameBasedPhaseModel, TimeBasedPhaseModel
 from ..rep_counting import RepCounter, RepValidator
 from ..form_assessment import FormScorer, TrajectoryComparator
 
@@ -39,6 +39,8 @@ class Exercise:
         self.phase_model: Optional[PhaseModel] = None
         self.phase_tracker = PhaseTracker(
             smoothing_window=config.smoothing_window,
+            smoothing_duration=config.smoothing_duration,
+            smoothing_mode=config.smoothing_mode,
             min_rep_duration=config.min_rep_duration,
             min_phase_coverage=config.min_phase_coverage,
         )
@@ -122,8 +124,51 @@ class Exercise:
                     )
 
         # Load phase model if available
-        if self.get_phase_model_path().exists():
-            self.phase_model = PhaseModel.load(str(self.get_phase_model_path()))
+        # Detect model type from saved file structure (file structure is source of truth)
+        import os
+        model_path = str(self.get_phase_model_path())
+        model_path_obj = self.get_phase_model_path()
+        
+        # Time-based models save as checkpoint file + metadata file (PyTorch Lightning)
+        # Also check for old Keras SavedModel format for backward compatibility
+        # Frame-based models save as a single .pkl file
+        # Remove extension from model_path to match save() logic
+        base_name = os.path.splitext(model_path)[0]
+        time_based_checkpoint = base_name + "_checkpoint.ckpt"  # PyTorch Lightning format
+        time_based_model_dir = base_name + "_model"  # Old Keras SavedModel format
+        time_based_metadata = model_path + "_metadata.joblib"
+        frame_based_file = model_path_obj
+        
+        has_time_based = (
+            os.path.exists(time_based_metadata) and (
+                os.path.exists(time_based_checkpoint) or  # PyTorch Lightning
+                os.path.isdir(time_based_model_dir)  # Old Keras format
+            )
+        )
+        has_frame_based = frame_based_file.exists()
+        
+        # Load appropriate model type based on file structure
+        if has_time_based:
+            try:
+                self.phase_model = TimeBasedPhaseModel.load(model_path)
+            except (FileNotFoundError, ValueError, KeyError) as e:
+                import warnings
+                warnings.warn(
+                    f"Failed to load time-based phase model: {e}. "
+                    f"Model will be retrained."
+                )
+                self.phase_model = None
+        elif has_frame_based:
+            try:
+                self.phase_model = FrameBasedPhaseModel.load(model_path)
+            except (FileNotFoundError, ValueError, KeyError) as e:
+                import warnings
+                warnings.warn(
+                    f"Failed to load frame-based phase model: {e}. "
+                    f"Model will be retrained."
+                )
+                self.phase_model = None
+        # If neither exists, phase_model remains None (will be created during training)
 
         # Load manifold if available
         if self.get_manifold_path().exists():

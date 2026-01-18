@@ -9,7 +9,7 @@ from .pose_extraction import MediaPipeExtractor
 from .pose_processing import PoseNormalizer, PoseEmbedder
 from .pose_processing.pose_utils import flip_keypoints_horizontally
 from .reference_learning import TrajectoryBuilder, ManifoldBuilder
-from .phase_estimation import PhaseModel, PhaseTracker
+from .phase_estimation import create_phase_model, PhaseTracker
 from .rep_counting import RepCounter, RepValidator, AutoRepDetector
 from .form_assessment import FormScorer, TrajectoryComparator
 from .exercise_framework import Exercise, ExerciseConfig
@@ -257,6 +257,7 @@ class ExercisePipeline:
 
         all_embeddings = []
         all_phases = []
+        all_timestamps = []  # For time-based models
 
         # Use provided videos or load from data manager
         if video_paths is None:
@@ -396,23 +397,40 @@ class ExercisePipeline:
                 plt.close()
                 print(f"  Saved similarity plot to: {plot_path}")
 
+            timestamps = video_data["timestamps"]
+            
             # Assign phases
             if video_rep_boundaries and len(video_rep_boundaries) > 0:
                 labeled_data = trajectory_builder.assign_phase_labels(
                     embeddings, video_rep_boundaries
                 )
-                for emb, phase in labeled_data:
-                    all_embeddings.append(emb)
-                    all_phases.append(phase)
+                # labeled_data is in same order as embeddings within rep boundaries
+                data_idx = 0
+                for start_idx, end_idx in video_rep_boundaries:
+                    for i in range(start_idx, min(end_idx + 1, len(embeddings))):
+                        if embeddings[i] is not None and data_idx < len(labeled_data):
+                            emb, phase = labeled_data[data_idx]
+                            all_embeddings.append(emb)
+                            all_phases.append(phase)
+                            if i < len(timestamps):
+                                all_timestamps.append(timestamps[i])
+                            data_idx += 1
                 
                 # Add flipped augmentation with same phase labels
                 if flipped_embeddings is not None:
                     flipped_labeled_data = trajectory_builder.assign_phase_labels(
                         flipped_embeddings, video_rep_boundaries
                     )
-                    for emb, phase in flipped_labeled_data:
-                        all_embeddings.append(emb)
-                        all_phases.append(phase)
+                    data_idx = 0
+                    for start_idx, end_idx in video_rep_boundaries:
+                        for i in range(start_idx, min(end_idx + 1, len(flipped_embeddings))):
+                            if flipped_embeddings[i] is not None and data_idx < len(flipped_labeled_data):
+                                emb, phase = flipped_labeled_data[data_idx]
+                                all_embeddings.append(emb)
+                                all_phases.append(phase)
+                                if i < len(timestamps):
+                                    all_timestamps.append(timestamps[i])
+                                data_idx += 1
             else:
                 # Fallback: linear phase assignment
                 print(f"  Warning: No reps detected, using linear phase assignment")
@@ -422,6 +440,8 @@ class ExercisePipeline:
                         phase = i / num_frames if num_frames > 0 else 0.0
                         all_embeddings.append(emb)
                         all_phases.append(phase)
+                        if i < len(timestamps):
+                            all_timestamps.append(timestamps[i])
                 
                 # Add flipped augmentation
                 if flipped_embeddings is not None:
@@ -430,16 +450,40 @@ class ExercisePipeline:
                             phase = i / num_frames if num_frames > 0 else 0.0
                             all_embeddings.append(emb)
                             all_phases.append(phase)
+                            if i < len(timestamps):
+                                all_timestamps.append(timestamps[i])
 
         if len(all_embeddings) == 0:
             raise ValueError("No training data collected")
 
         print(f"Training phase model on {len(all_embeddings)} samples...")
-        print(f"  Using sliding window size: {self.exercise.config.phase_window_size}")
-        self.exercise.phase_model = PhaseModel(
-            window_size=self.exercise.config.phase_window_size
+        print(f"  Model type: {self.exercise.config.phase_model_type}")
+        if self.exercise.config.phase_window_mode == "frames":
+            print(f"  Using sliding window size: {self.exercise.config.phase_window_size} frames")
+        else:
+            print(f"  Using sliding window duration: {self.exercise.config.phase_window_duration} seconds")
+        print(f"  Using phase buffer size: {self.exercise.config.phase_buffer_size}")
+        
+        # Create model using factory
+        self.exercise.phase_model = create_phase_model(
+            model_type=self.exercise.config.phase_model_type,
+            phase_window_size=self.exercise.config.phase_window_size,
+            phase_window_duration=self.exercise.config.phase_window_duration,
+            phase_window_mode=self.exercise.config.phase_window_mode,
+            phase_buffer_size=self.exercise.config.phase_buffer_size,
         )
-        self.exercise.phase_model.fit(all_embeddings, all_phases)
+        
+        # Fit model (pass timestamps for time-based models)
+        if self.exercise.config.phase_model_type == "time_based" or self.exercise.config.phase_window_mode == "time":
+            # Ensure timestamps match embeddings
+            if len(all_timestamps) != len(all_embeddings):
+                min_len = min(len(all_timestamps), len(all_embeddings))
+                all_timestamps = all_timestamps[:min_len]
+                all_embeddings = all_embeddings[:min_len]
+                all_phases = all_phases[:min_len]
+            self.exercise.phase_model.fit(all_embeddings, all_phases, all_timestamps)
+        else:
+            self.exercise.phase_model.fit(all_embeddings, all_phases)
 
         # Save exercise
         self.exercise.save()
@@ -499,8 +543,11 @@ class ExercisePipeline:
         if hasattr(self.exercise.phase_model, 'reset_buffer'):
             self.exercise.phase_model.reset_buffer()
 
-        # Estimate phases
-        phases = self.exercise.phase_model.predict_phases(embeddings, log_timing=True)
+        # Estimate phases (pass timestamps for time-based models)
+        if hasattr(self.exercise.phase_model, 'window_duration'):  # Time-based model
+            phases = self.exercise.phase_model.predict_phases(embeddings, timestamps, log_timing=True)
+        else:
+            phases = self.exercise.phase_model.predict_phases(embeddings, log_timing=True)
 
         # Track phases
         unwrapped_phases = self.exercise.phase_tracker.track_phase(

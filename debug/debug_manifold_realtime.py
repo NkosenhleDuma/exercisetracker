@@ -96,9 +96,32 @@ def main():
     print(f"Output directory: {output_dir}")
 
     # Initialize real-time processor
-    window_size = exercise.config.phase_window_size
+    # Check if time-based model
+    is_time_based = (
+        exercise.config.phase_model_type == "time_based" or 
+        exercise.config.phase_window_mode == "time" or
+        hasattr(exercise.phase_model, 'window_duration')
+    )
+    
+    if is_time_based:
+        window_size = 1  # Time-based models handle windows internally
+        model_backend = "PyTorch Lightning (LSTM)"
+        print(f"\nUsing time-based model (window duration: {exercise.config.phase_window_duration}s)")
+        print(f"Model backend: {model_backend}")
+    else:
+        window_size = exercise.config.phase_window_size
+        # Check if MLP (PyTorch) or RandomForest (sklearn)
+        if hasattr(exercise.phase_model, 'model_type'):
+            if exercise.phase_model.model_type == "mlp":
+                model_backend = "PyTorch (MLP)"
+            else:
+                model_backend = "sklearn (RandomForest)"
+        else:
+            model_backend = "Unknown"
+        print(f"\nUsing frame-based model (window size: {window_size} frames)")
+        print(f"Model backend: {model_backend}")
+    
     use_3d = exercise.config.use_3d
-    print(f"\nUsing window size: {window_size}")
     print(f"Using 3D coordinates: {use_3d}")
     
     pose_extractor = MediaPipeExtractor(use_3d=use_3d)
@@ -164,9 +187,15 @@ def main():
             phase_start = time.perf_counter()
             # For phase prediction, we use the current embedding with the model's buffer
             # The model will handle the window internally via its buffer
-            phase = exercise.phase_model.predict_phase(
-                embedding, update_buffer=True, log_timing=False
-            )
+            # Pass timestamp for time-based models
+            if is_time_based:
+                phase = exercise.phase_model.predict_phase(
+                    embedding, timestamp=timestamp, update_buffer=True, log_timing=False
+                )
+            else:
+                phase = exercise.phase_model.predict_phase(
+                    embedding, update_buffer=True, log_timing=False
+                )
             phase_time = time.perf_counter() - phase_start
             phase_times.append(phase_time)
 
